@@ -1,32 +1,36 @@
 package monads.store
 
-import monads.store.Store2.{OrderService, ProductService, UserService}
-
+import scala.concurrent.Future
 import scala.util.Try
 //import cats.syntax.either._
 
 object Store {
+  implicit val ec = scala.concurrent.ExecutionContext.global
+
   private val productService = new ProductService(new ProductRepository)
   private val userService = new UserService(new UserRepository)
   private val orderService = new OrderService(new OrderRepository)
 
-  def placeOrder(userId: String, productId: String, quantity: Int): Either[Throwable, Order] = {
+  def placeOrder(userId: String, productId: String, quantity: Int): Future[Order] = {
     /*
   * 1/ Query the database for the product,
   * and update product quantity base on orders (also handle failures)
   * 2/ Create order
   * 3/ Send email to user about Order
   * */
+
+    val userFuture = userService.getUser(userId)
+    val productFuture = productService.getProduct(productId)
+
     for {
-      product <- productService.getProduct(productId)
-        .filterOrElse(_.quantity > quantity, new Throwable("not sufficient product quantity"))
-      user <- userService.getUser(userId)
-      order <- Right(Order(productId, userId, quantity, quantity * product.price))
-      email <- user.email.toRight(new Throwable("Empty Email"))
+      product <- productFuture
+        if product.quantity > quantity
+      user <- userFuture
+      order <- Future.successful(Order(productId, userId, quantity, quantity * product.price))
     } yield {
-      orderService.addOrder(order)
-      productService.unloadProduct(productId, quantity)
-      Try(MailServer.sendMail(email, order))
+      Future(MailServer.sendMail(user.email.get, order))
+      Future(orderService.addOrder(order))
+      Future(productService.unloadProduct(productId, quantity))
       order
     }
   }
@@ -37,40 +41,40 @@ object Store {
   * 2/ Create order
   * 3/ Send email to user about Order
   * */
-  def placeOrder2(userId: String, productId: String, quantity: Int) = ???
-
   def main(args: Array[String]): Unit = {
     val start = System.currentTimeMillis()
-    println(placeOrder("1", "1", 3))
-    val end = System.currentTimeMillis()
-    println(s"Time ${end - start}")
+    placeOrder("1", "1", 1)
+      .onComplete { x =>
+        println(x)
+        val end = System.currentTimeMillis()
+        println(s"Time ${end - start}")
+      }
+
+    Thread.sleep(100000)
   }
 
 
   class ProductService(productRepository: ProductRepository) {
-    def getProduct(id: String): Either[Throwable, Product] =
-      Try(productRepository.getProduct(id))
-        .toEither
+    def getProduct(id: String): Future[Product] =
+      Future {
+        productRepository.getProduct(id)
+      }
 
-    def getProductWithFilter(id: String, f: Product => Boolean): Either[Throwable, Product] =
-      Try(productRepository.getProduct(id))
-        .toEither
-        .filterOrElse(f, new Throwable)
-
-    def unloadProduct(id: String, quantity: Int): Either[Throwable, Unit] =
-      Try(productRepository.getProduct(id))
-        .toEither
-        .map { prod =>
-          val newProd = prod.copy(quantity = quantity)
-          productRepository.putProduct(newProd)
-        }
+    def unloadProduct(id: String, quantity: Int): Future[Unit] =
+      Future {
+        productRepository.getProduct(id)
+      }
   }
 
   class UserService(userRepository: UserRepository) {
-    def getUser(id: String): Either[Throwable, User] = Try(userRepository.getUser(id)).toEither
+    def getUser(id: String): Future[User] = Future {
+      userRepository.getUser(id)
+    }
   }
 
   class OrderService(orderRepository: OrderRepository) {
-    def addOrder(order: Order): Unit = orderRepository.putOrder(order)
+    def addOrder(order: Order): Future[Unit] = Future {
+      orderRepository.putOrder(order)
+    }
   }
 }
