@@ -1,8 +1,10 @@
 package monads.store
 
+import cats.data.EitherT
 import scala.concurrent.Future
-import scala.util.Try
-//import cats.syntax.either._
+import io.circe._, io.circe.parser._
+import io.circe.generic.auto._
+import cats.implicits._
 
 object Store {
   implicit val ec = scala.concurrent.ExecutionContext.global
@@ -11,7 +13,7 @@ object Store {
   private val userService = new UserService(new UserRepository)
   private val orderService = new OrderService(new OrderRepository)
 
-  def placeOrder(userId: String, productId: String, quantity: Int): Future[Order] = {
+  def placeOrder(userId: String, productId: String, quantity: Int): Future[Either[Error, Order]] = {
     /*
   * 1/ Query the database for the product,
   * and update product quantity base on orders (also handle failures)
@@ -22,17 +24,16 @@ object Store {
     val userFuture = userService.getUser(userId)
     val productFuture = productService.getProduct(productId)
 
-    for {
-      product <- productFuture
-        if product.quantity > quantity
-      user <- userFuture
-      order <- Future.successful(Order(productId, userId, quantity, quantity * product.price))
+    (for {
+      product <- EitherT(productFuture)
+      user <- EitherT(userFuture)
+      order <- EitherT.rightT[Future, Error](Order(productId, userId, quantity, quantity * product.price))
     } yield {
       Future(MailServer.sendMail(user.email.get, order))
       Future(orderService.addOrder(order))
       Future(productService.unloadProduct(productId, quantity))
       order
-    }
+    }).value
   }
 
   /*
@@ -53,11 +54,10 @@ object Store {
     Thread.sleep(100000)
   }
 
-
   class ProductService(productRepository: ProductRepository) {
-    def getProduct(id: String): Future[Product] =
+    def getProduct(id: String): Future[Either[Error, Product]] =
       Future {
-        productRepository.getProduct(id)
+        decode[Product](productRepository.getProduct(id).body)
       }
 
     def unloadProduct(id: String, quantity: Int): Future[Unit] =
@@ -67,8 +67,8 @@ object Store {
   }
 
   class UserService(userRepository: UserRepository) {
-    def getUser(id: String): Future[User] = Future {
-      userRepository.getUser(id)
+    def getUser(id: String): Future[Either[Error, User]] = Future {
+      decode[User](userRepository.getUser(id).body)
     }
   }
 

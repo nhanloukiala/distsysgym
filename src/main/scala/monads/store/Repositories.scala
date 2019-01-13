@@ -1,7 +1,13 @@
 package monads.store
 
 import scala.collection.mutable
-import scala.util.Random
+import scala.util.{Random, Try}
+import io.circe._
+import io.circe.generic.auto._
+import io.circe.parser._
+import io.circe.syntax._
+
+case class HttpResponse(body: String)
 
 case class Product(id: String, name: String, quantity: Int, price: Double)
 
@@ -16,9 +22,10 @@ class ProductRepository {
     "3" -> Product("3", "Sticky Note", 1, 5.0)
   )
 
-  def getProduct(id: String): Product = {
+  def getProduct(id: String): HttpResponse = {
     Thread.sleep(1000)
-    database.getOrElse(id, throw new Exception(s"missing product ${id}"))
+    val response = database.getOrElse(id, throw new Exception(s"missing product ${id}")).asJson.noSpaces
+    HttpResponse(response)
   }
 
   def putProduct(product: Product): Unit = {
@@ -35,9 +42,10 @@ class UserRepository {
     "5" -> User("5", "Ivan", None)
   )
 
-  def getUser(id: String): User = {
+  def getUser(id: String): HttpResponse = {
     Thread.sleep(1000)
-    database.getOrElse(id, throw new Exception(s"missing user ${id}"))
+    val response = database.getOrElse(id, throw new Exception(s"missing user ${id}")).asJson.noSpaces
+    HttpResponse(response)
   }
 }
 
