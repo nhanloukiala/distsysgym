@@ -18,7 +18,7 @@ object EffectStacking {
     }
   }
 
-  def dangerousAction() : String = {
+  def unsafeCall() : String = {
     import scala.util.Random._
     (nextInt() % 2) match {
       case 0 => throw new Exception("Exception")
@@ -32,9 +32,9 @@ object EffectStacking {
 
     (1 to 100).map { _ =>
       for {
-        x1 <- lift(dangerousAction())
-        x2 <- lift(dangerousAction())
-        x3 <- lift(dangerousAction())
+        x1 <- lift(unsafeCall())
+        x2 <- lift(unsafeCall())
+        x3 <- lift(unsafeCall())
       } yield {
         println(s"${x1.orNull} ${x2.orNull} ${x3.orNull}")
       }
